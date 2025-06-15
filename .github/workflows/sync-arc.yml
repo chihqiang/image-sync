@@ -1,0 +1,54 @@
+name: sync-acr  # 工作流名称：同步 ACR 镜像仓库
+
+# 手动触发该工作流
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest  # 使用最新的 Ubuntu 虚拟环境执行作业
+
+    # 设置环境变量，使用仓库 Secrets 中配置的阿里云 ACR 用户名和密码
+    env:
+      ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+      ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+
+    steps:
+      # 第一步：检出仓库代码到 runner 环境
+      - uses: actions/checkout@v4
+
+      # 第二步：登录阿里云容器镜像仓库
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          registry: registry.cn-hangzhou.aliyuncs.com  # 阿里云镜像仓库地址
+          username: ${{ secrets.ACR_USERNAME }}       # 用户名，从 Secrets 读取
+          password: ${{ secrets.ACR_PASSWORD }}       # 密码，从 Secrets 读取
+
+      # 第三步：读取 acr.hub.list 文件内容，将多行转成一行空格分隔，并存储为输出变量
+      - name: Read acr.hub.list content
+        id: read_hub_list
+        run: |
+          echo "images=$(cat acr.hub.list | tr '\n' ' ')" >> $GITHUB_OUTPUT
+
+      # 第四步：调用自定义镜像同步 Action，同步 hub 镜像列表到指定的 namespace
+      - name: Run sync-acr-hub Script
+        uses: chihqiang/image-sync-action@main
+        with:
+          registry: registry.cn-hangzhou.aliyuncs.com  # 目标镜像仓库地址
+          namespace: buildx/hub                        # 目标命名空间
+          images: ${{ steps.read_hub_list.outputs.images }}  # 同步的镜像列表
+
+      # 第五步：读取 acr.soft.list 文件内容，将多行转成一行空格分隔，并存储为输出变量
+      - name: Read acr.soft.list content
+        id: read_soft_list
+        run: |
+          echo "images=$(cat acr.soft.list | tr '\n' ' ')" >> $GITHUB_OUTPUT
+
+      # 第六步：调用自定义镜像同步 Action，同步 soft 镜像列表到指定的 namespace
+      - name: Run sync-acr-soft Script
+        uses: chihqiang/image-sync-action@main
+        with:
+          registry: registry.cn-hangzhou.aliyuncs.com  # 目标镜像仓库地址
+          namespace: buildx/soft                       # 目标命名空间
+          images: ${{ steps.read_soft_list.outputs.images }}  # 同步的镜像列表
